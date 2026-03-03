@@ -113,16 +113,16 @@ impl WgConfig {
 
     /// Parse a WireGuard .conf file.
     #[staticmethod]
-    fn from_file(path: &str) -> PyResult<Self> {
+    fn from_file(path: &str) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| WireGuardError::Config(format!("Cannot read '{}': {}", path, e)))?;
-        Self::from_str(&content).map_err(Into::into)
+        Self::from_str(&content)
     }
 
     /// Parse a WireGuard config from a string.
     #[staticmethod]
-    fn from_str(content: &str) -> PyResult<Self> {
-        parse_conf(content).map_err(Into::into)
+    fn from_str(content: &str) -> Result<Self> {
+        parse_conf(content)
     }
 
     fn __repr__(&self) -> String {

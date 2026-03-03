@@ -49,7 +49,7 @@ impl WgStream {
     ///
     /// Returns:
     ///     Number of bytes actually sent (may be less than len(data)).
-    fn send(&self, data: &[u8]) -> PyResult<usize> {
+    fn send(&self, data: &[u8]) -> Result<usize> {
         self.check_alive()?;
 
         let (resp_tx, resp_rx) = crossbeam_channel::bounded(1);
@@ -73,7 +73,7 @@ impl WgStream {
     /// Send all data through the TCP connection.
     ///
     /// Blocks until all bytes are sent or an error occurs.
-    fn sendall(&self, data: &[u8]) -> PyResult<()> {
+    fn sendall(&self, data: &[u8]) -> Result<()> {
         let mut offset = 0;
         while offset < data.len() {
             let n = self.send(&data[offset..])?;
@@ -94,7 +94,7 @@ impl WgStream {
     ///
     /// Returns:
     ///     Bytes received (empty bytes means connection closed by peer).
-    fn recv<'py>(&self, py: Python<'py>, max_len: usize) -> PyResult<Bound<'py, PyBytes>> {
+    fn recv<'py>(&self, py: Python<'py>, max_len: usize) -> Result<Bound<'py, PyBytes>> {
         self.check_alive()?;
 
         // Poll with short timeout, retrying until data arrives or timeout.
@@ -123,7 +123,7 @@ impl WgStream {
                     return Ok(PyBytes::new_bound(py, &[]));
                 }
                 Ok(Err(e)) => {
-                    return Err(e.into());
+                    return Err(e);
                 }
                 Err(_) => {
                     // Channel timeout — just retry.
@@ -132,7 +132,7 @@ impl WgStream {
 
             // No data yet — check if we've timed out.
             if std::time::Instant::now() >= deadline {
-                return Err(WireGuardError::Timeout.into());
+                return Err(WireGuardError::Timeout);
             }
 
             // Release the GIL while we sleep so other Python threads can run.
@@ -143,7 +143,7 @@ impl WgStream {
     }
 
     /// Close the TCP connection gracefully.
-    fn close(&mut self) -> PyResult<()> {
+    fn close(&mut self) -> Result<()> {
         if self.closed {
             return Ok(());
         }
@@ -158,7 +158,7 @@ impl WgStream {
     }
 
     /// Check if the stream is still connected.
-    fn is_connected(&self) -> PyResult<bool> {
+    fn is_connected(&self) -> Result<bool> {
         if self.closed || !self.shared.alive.load(Ordering::SeqCst) {
             return Ok(false);
         }
@@ -183,7 +183,7 @@ impl WgStream {
     /// Args:
     ///     timeout_secs: Timeout in seconds (None for default 30s).
     #[pyo3(signature = (timeout_secs=None))]
-    fn set_timeout(&mut self, timeout_secs: Option<f64>) -> PyResult<()> {
+    fn set_timeout(&mut self, timeout_secs: Option<f64>) -> Result<()> {
         self.timeout = match timeout_secs {
             Some(t) => Duration::from_secs_f64(t),
             None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),

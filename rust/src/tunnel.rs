@@ -35,9 +35,6 @@ const TCP_TX_BUF_SIZE: usize = 65535;
 /// Max size of a single encrypted WireGuard packet.
 const MAX_PACKET_SIZE: usize = 1500;
 
-/// How often to tick boringtun timers (ms).
-const TIMER_TICK_MS: u64 = 100;
-
 /// Commands sent from Python thread to the background poll loop.
 pub enum TunnelCommand {
     /// Open a new TCP connection through the tunnel.
@@ -89,7 +86,7 @@ pub struct WgTunnel {
 impl WgTunnel {
     /// Create a new WireGuard tunnel from configuration.
     #[new]
-    fn new(config: WgConfig) -> PyResult<Self> {
+    fn new(config: WgConfig) -> Result<Self> {
         let tunnel = Self::create(config)?;
         Ok(tunnel)
     }
@@ -105,9 +102,9 @@ impl WgTunnel {
     ///
     /// Returns:
     ///     WgStream object for reading/writing data.
-    fn create_stream(&self, host: &str, port: u16) -> PyResult<WgStream> {
+    fn create_stream(&self, host: &str, port: u16) -> Result<WgStream> {
         if !self.shared.alive.load(Ordering::SeqCst) {
-            return Err(WireGuardError::TunnelClosed.into());
+            return Err(WireGuardError::TunnelClosed);
         }
 
         // Resolve hostname to IP on the host side.
@@ -154,7 +151,7 @@ impl WgTunnel {
     }
 
     /// Close the tunnel and stop the background thread.
-    fn close(&mut self) -> PyResult<()> {
+    fn close(&mut self) -> Result<()> {
         self.shared.alive.store(false, Ordering::SeqCst);
         let _ = self.shared.cmd_tx.send(TunnelCommand::Shutdown);
         if let Some(thread) = self.poll_thread.take() {
@@ -208,13 +205,11 @@ impl WgTunnel {
         .map_err(|e| WireGuardError::BoringTun(e.to_string()))?;
 
         // Create UDP socket to WireGuard endpoint.
-        let udp_socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| WireGuardError::Io(e))?;
-        udp_socket
-            .connect(endpoint)
-            .map_err(|e| WireGuardError::Io(e))?;
+        let udp_socket = UdpSocket::bind("0.0.0.0:0").map_err(WireGuardError::Io)?;
+        udp_socket.connect(endpoint).map_err(WireGuardError::Io)?;
         udp_socket
             .set_nonblocking(true)
-            .map_err(|e| WireGuardError::Io(e))?;
+            .map_err(WireGuardError::Io)?;
 
         // Parse our tunnel IP address.
         let tunnel_ip = config.ipv4_addr()?;
@@ -245,7 +240,7 @@ impl WgTunnel {
                     shared_clone,
                 );
             })
-            .map_err(|e| WireGuardError::Io(e))?;
+            .map_err(WireGuardError::Io)?;
 
         Ok(WgTunnel {
             shared,
@@ -297,11 +292,10 @@ impl WgTunnel {
         let mut wg_send_buf = vec![0u8; MAX_PACKET_SIZE + 148]; // WG overhead
 
         // Trigger initial handshake.
-        match tunn.format_handshake_initiation(&mut wg_send_buf, false) {
-            TunnResult::WriteToNetwork(data) => {
-                let _ = udp_socket.send(data);
-            }
-            _ => {}
+        if let TunnResult::WriteToNetwork(data) =
+            tunn.format_handshake_initiation(&mut wg_send_buf, false)
+        {
+            let _ = udp_socket.send(data);
         }
 
         loop {
@@ -480,9 +474,7 @@ impl WgTunnel {
             for (handle, _) in pending_connects.iter() {
                 if active_handles.contains(handle) {
                     let sock = sockets.get_mut::<tcp::Socket>(*handle);
-                    if sock.is_active() && sock.may_send() {
-                        completed.push(*handle);
-                    } else if sock.state() == tcp::State::Closed {
+                    if (sock.is_active() && sock.may_send()) || sock.state() == tcp::State::Closed {
                         completed.push(*handle);
                     }
                 }
