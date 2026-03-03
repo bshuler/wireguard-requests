@@ -5,7 +5,6 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-
 from wireguard_requests.config import Peer, WireGuardConfig
 
 
@@ -74,7 +73,7 @@ class TestWireguardContext:
 
         from wireguard_requests.context import wireguard_context
 
-        with wireguard_context(mock_config) as tunnel:
+        with wireguard_context(mock_config) as _tunnel:
             pass
 
         mock_tunnel.close.assert_called_once()

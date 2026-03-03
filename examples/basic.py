@@ -5,6 +5,7 @@ Usage:
 """
 
 import sys
+
 from wireguard_requests import WireGuardConfig, wireguard_context
 
 try:

@@ -1,8 +1,7 @@
 """Unit tests for WireGuard configuration parsing."""
 
 import pytest
-from wireguard_requests.config import WireGuardConfig, Peer
-
+from wireguard_requests.config import Peer, WireGuardConfig
 
 BASIC_CONF = """\
 [Interface]

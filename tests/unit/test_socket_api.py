@@ -5,10 +5,9 @@ a real WireGuard tunnel — they use mocks for the native layer.
 """
 
 import socket as stdlib_socket
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from wireguard_requests.socket import WireGuardSocket
 
 

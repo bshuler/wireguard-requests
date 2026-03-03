@@ -60,9 +60,7 @@ class AsyncWireGuardSocket:
         self._remote_addr = address
 
         loop = self._get_loop()
-        self._stream = await loop.run_in_executor(
-            None, self._tunnel.create_stream, host, port
-        )
+        self._stream = await loop.run_in_executor(None, self._tunnel.create_stream, host, port)
 
     async def send(self, data: bytes) -> int:
         """Send data through the tunnel.

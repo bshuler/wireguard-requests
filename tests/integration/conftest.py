@@ -1,14 +1,11 @@
 """Fixtures for integration tests."""
 
-import os
 import subprocess
 import time
 from pathlib import Path
 
 import pytest
-
 from wireguard_requests.config import WireGuardConfig
-
 
 INTEGRATION_DIR = Path(__file__).parent
 WG_CONFIG_DIR = INTEGRATION_DIR / "wg-config"

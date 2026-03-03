@@ -44,12 +44,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install maturin and test deps
-        run: pip install maturin pytest pytest-asyncio
+      - name: Create venv and install deps
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install maturin pytest pytest-asyncio
+        if: runner.os != 'Windows'
+      - name: Create venv and install deps (Windows)
+        run: |
+          python -m venv .venv
+          .venv\Scripts\pip install maturin pytest pytest-asyncio
+        if: runner.os == 'Windows'
       - name: Build extension
-        run: maturin develop --manifest-path rust/Cargo.toml
+        run: .venv/bin/maturin develop --manifest-path rust/Cargo.toml
+        if: runner.os != 'Windows'
+      - name: Build extension (Windows)
+        run: .venv\Scripts\maturin develop --manifest-path rust/Cargo.toml
+        if: runner.os == 'Windows'
       - name: Run unit tests
-        run: pytest tests/unit -v
+        run: .venv/bin/pytest tests/unit -v
+        if: runner.os != 'Windows'
+      - name: Run unit tests (Windows)
+        run: .venv\Scripts\pytest tests/unit -v
+        if: runner.os == 'Windows'
 
   rust-test:
     runs-on: ubuntu-latest
@@ -70,14 +86,15 @@ jobs:
           python-version: "3.13"
       - name: Install dependencies
         run: |
-          pip install maturin pytest pytest-asyncio requests httpx
-          maturin develop --manifest-path rust/Cargo.toml
+          python -m venv .venv
+          .venv/bin/pip install maturin pytest pytest-asyncio requests httpx
+          .venv/bin/maturin develop --manifest-path rust/Cargo.toml
       - name: Start WireGuard test peer
         run: docker compose -f tests/integration/docker-compose.yml up -d
       - name: Wait for peer
         run: sleep 5
       - name: Run integration tests
-        run: pytest tests/integration -v -m integration
+        run: .venv/bin/pytest tests/integration -v -m integration
       - name: Stop WireGuard test peer
         if: always()
         run: docker compose -f tests/integration/docker-compose.yml down

@@ -8,6 +8,7 @@ Usage:
 """
 
 import sys
+
 from wireguard_requests import WireGuardConfig, create_session
 
 
@@ -29,6 +30,7 @@ def main():
 
         # Regular requests still use the normal network.
         import requests
+
         r2 = requests.get("https://ifconfig.me", timeout=15)
         print(f"Normal IP:    {r2.text.strip()}")
     finally:

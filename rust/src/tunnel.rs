@@ -47,9 +47,7 @@ pub enum TunnelCommand {
         response: Sender<Result<SocketHandle>>,
     },
     /// Close a TCP stream.
-    CloseStream {
-        handle: SocketHandle,
-    },
+    CloseStream { handle: SocketHandle },
     /// Write data into a TCP stream.
     WriteData {
         handle: SocketHandle,
@@ -122,9 +120,13 @@ impl WgTunnel {
             let addr = format!("{}:{}", host, port);
             let resolved = addr
                 .to_socket_addrs()
-                .map_err(|e| WireGuardError::Config(format!("DNS resolution failed for '{}': {}", host, e)))?
+                .map_err(|e| {
+                    WireGuardError::Config(format!("DNS resolution failed for '{}': {}", host, e))
+                })?
                 .find(|a| a.is_ipv4())
-                .ok_or_else(|| WireGuardError::Config(format!("No IPv4 address found for '{}'", host)))?;
+                .ok_or_else(|| {
+                    WireGuardError::Config(format!("No IPv4 address found for '{}'", host))
+                })?;
             match resolved.ip() {
                 std::net::IpAddr::V4(v4) => v4,
                 _ => unreachable!(),
@@ -134,11 +136,14 @@ impl WgTunnel {
         let dst_addr = Ipv4Address::from_bytes(&ip.octets());
         let (resp_tx, resp_rx) = crossbeam_channel::bounded(1);
 
-        self.shared.cmd_tx.send(TunnelCommand::CreateStream {
-            dst_addr,
-            dst_port: port,
-            response: resp_tx,
-        }).map_err(WireGuardError::from)?;
+        self.shared
+            .cmd_tx
+            .send(TunnelCommand::CreateStream {
+                dst_addr,
+                dst_port: port,
+                response: resp_tx,
+            })
+            .map_err(WireGuardError::from)?;
 
         // Wait for the connection to be established (with timeout).
         let handle = resp_rx
@@ -197,14 +202,13 @@ impl WgTunnel {
             peer_public_key.into(),
             None, // preshared key
             keepalive,
-            0, // tunnel index
+            0,    // tunnel index
             None, // rate limiter
         )
         .map_err(|e| WireGuardError::BoringTun(e.to_string()))?;
 
         // Create UDP socket to WireGuard endpoint.
-        let udp_socket = UdpSocket::bind("0.0.0.0:0")
-            .map_err(|e| WireGuardError::Io(e))?;
+        let udp_socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| WireGuardError::Io(e))?;
         udp_socket
             .connect(endpoint)
             .map_err(|e| WireGuardError::Io(e))?;
@@ -335,11 +339,7 @@ impl WgTunnel {
                             smoltcp::wire::IpEndpoint::new(IpAddress::Ipv4(dst_addr), dst_port);
 
                         let sock = sockets.get_mut::<tcp::Socket>(handle);
-                        match sock.connect(
-                            iface.context(),
-                            remote_endpoint,
-                            local_endpoint,
-                        ) {
+                        match sock.connect(iface.context(), remote_endpoint, local_endpoint) {
                             Ok(()) => {
                                 active_handles.insert(handle);
                                 pending_connects.insert(handle, response);
@@ -371,9 +371,10 @@ impl WgTunnel {
                                     let _ = response.send(Ok(n));
                                 }
                                 Err(e) => {
-                                    let _ = response.send(Err(WireGuardError::SmolTcp(
-                                        format!("TCP send failed: {}", e),
-                                    )));
+                                    let _ = response.send(Err(WireGuardError::SmolTcp(format!(
+                                        "TCP send failed: {}",
+                                        e
+                                    ))));
                                 }
                             }
                         } else {
@@ -399,9 +400,10 @@ impl WgTunnel {
                                     let _ = response.send(Err(WireGuardError::StreamClosed));
                                 }
                                 Err(e) => {
-                                    let _ = response.send(Err(WireGuardError::SmolTcp(
-                                        format!("TCP recv failed: {}", e),
-                                    )));
+                                    let _ = response.send(Err(WireGuardError::SmolTcp(format!(
+                                        "TCP recv failed: {}",
+                                        e
+                                    ))));
                                 }
                             }
                         } else {

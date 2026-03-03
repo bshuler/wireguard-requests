@@ -53,14 +53,18 @@ impl WgStream {
         self.check_alive()?;
 
         let (resp_tx, resp_rx) = crossbeam_channel::bounded(1);
-        self.shared.cmd_tx.send(TunnelCommand::WriteData {
-            handle: self.handle,
-            data: data.to_vec(),
-            response: resp_tx,
-        }).map_err(WireGuardError::from)?;
+        self.shared
+            .cmd_tx
+            .send(TunnelCommand::WriteData {
+                handle: self.handle,
+                data: data.to_vec(),
+                response: resp_tx,
+            })
+            .map_err(WireGuardError::from)?;
 
         // If smoltcp's buffer is full, retry with backoff.
-        let result = resp_rx.recv_timeout(self.timeout)
+        let result = resp_rx
+            .recv_timeout(self.timeout)
             .map_err(|_| WireGuardError::Timeout)??;
 
         Ok(result)
@@ -98,11 +102,14 @@ impl WgStream {
 
         loop {
             let (resp_tx, resp_rx) = crossbeam_channel::bounded(1);
-            self.shared.cmd_tx.send(TunnelCommand::ReadData {
-                handle: self.handle,
-                max_len,
-                response: resp_tx,
-            }).map_err(WireGuardError::from)?;
+            self.shared
+                .cmd_tx
+                .send(TunnelCommand::ReadData {
+                    handle: self.handle,
+                    max_len,
+                    response: resp_tx,
+                })
+                .map_err(WireGuardError::from)?;
 
             match resp_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(Ok(data)) => {
@@ -157,10 +164,13 @@ impl WgStream {
         }
 
         let (resp_tx, resp_rx) = crossbeam_channel::bounded(1);
-        self.shared.cmd_tx.send(TunnelCommand::IsConnected {
-            handle: self.handle,
-            response: resp_tx,
-        }).map_err(WireGuardError::from)?;
+        self.shared
+            .cmd_tx
+            .send(TunnelCommand::IsConnected {
+                handle: self.handle,
+                response: resp_tx,
+            })
+            .map_err(WireGuardError::from)?;
 
         let connected = resp_rx
             .recv_timeout(Duration::from_secs(5))
@@ -182,10 +192,7 @@ impl WgStream {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "WgStream(handle={:?}, closed={})",
-            self.handle, self.closed
-        )
+        format!("WgStream(handle={:?}, closed={})", self.handle, self.closed)
     }
 }
 

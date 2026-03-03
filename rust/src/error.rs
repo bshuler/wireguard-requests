@@ -1,4 +1,6 @@
-use pyo3::exceptions::{PyConnectionError, PyOSError, PyRuntimeError, PyTimeoutError, PyValueError};
+use pyo3::exceptions::{
+    PyConnectionError, PyOSError, PyRuntimeError, PyTimeoutError, PyValueError,
+};
 use pyo3::PyErr;
 use thiserror::Error;
 

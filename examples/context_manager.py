@@ -9,6 +9,7 @@ Usage:
 """
 
 import sys
+
 from wireguard_requests import WireGuardConfig, wireguard_context
 
 
@@ -21,6 +22,7 @@ def main():
 
     print("Before tunnel:")
     import urllib.request
+
     ip = urllib.request.urlopen("https://ifconfig.me", timeout=10).read().decode().strip()
     print(f"  IP: {ip}")
 

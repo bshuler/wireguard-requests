@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from . import _native
 from .config import WireGuardConfig
 from .socket import WireGuardSocket
@@ -36,7 +34,7 @@ def create_session(config: WireGuardConfig, **kwargs):
     """
     try:
         import requests
-        from urllib3.util.connection import create_connection as _orig_create_connection
+        import urllib3.util.connection  # noqa: F401
     except ImportError:
         raise ImportError(
             "The 'requests' package is required for create_session(). "
@@ -59,7 +57,9 @@ def create_session(config: WireGuardConfig, **kwargs):
 
             original_create_connection = urllib3.util.connection.create_connection
 
-            def wg_create_connection(address, timeout=None, source_address=None, socket_options=None):
+            def wg_create_connection(
+                address, timeout=None, source_address=None, socket_options=None
+            ):
                 sock = WireGuardSocket(self._wg_tunnel)
                 if timeout is not None:
                     sock.settimeout(timeout)

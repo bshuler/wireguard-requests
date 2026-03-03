@@ -7,7 +7,6 @@ tunnel HTTP requests through the WireGuard connection.
 Run with: pytest tests/integration -v -m integration
 """
 
-import json
 
 import pytest
 
@@ -37,7 +36,7 @@ class TestRealTunnel:
         from wireguard_requests import create_session
 
         try:
-            import requests
+            import requests  # noqa: F401
         except ImportError:
             pytest.skip("requests not installed")
 
@@ -61,9 +60,7 @@ class TestRealTunnel:
 
         with wireguard_context(wg_config):
             for i in range(5):
-                response = requests.get(
-                    f"http://10.13.13.1:8080/multi/{i}", timeout=10
-                )
+                response = requests.get(f"http://10.13.13.1:8080/multi/{i}", timeout=10)
                 assert response.status_code == 200
                 data = response.json()
                 assert data["path"] == f"/multi/{i}"

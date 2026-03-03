@@ -1,10 +1,8 @@
 """Unit tests for AsyncWireGuardSocket."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
-
 from wireguard_requests.async_socket import AsyncWireGuardSocket
 
 

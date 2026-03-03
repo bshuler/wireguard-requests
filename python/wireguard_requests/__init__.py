@@ -29,17 +29,22 @@ def __getattr__(name):
     """Lazy imports for components that depend on the native Rust module."""
     if name == "WireGuardSocket":
         from .socket import WireGuardSocket
+
         return WireGuardSocket
     if name == "AsyncWireGuardSocket":
         from .async_socket import AsyncWireGuardSocket
+
         return AsyncWireGuardSocket
     if name == "wireguard_context":
         from .context import wireguard_context
+
         return wireguard_context
     if name == "create_session":
         from .session import create_session
+
         return create_session
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __version__ = "0.1.0"
 

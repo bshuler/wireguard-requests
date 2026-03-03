@@ -50,9 +50,9 @@ impl WgPeer {
 impl WgPeer {
     /// Parse endpoint string into SocketAddr.
     pub fn endpoint_addr(&self) -> Result<SocketAddr> {
-        self.endpoint
-            .parse::<SocketAddr>()
-            .map_err(|e| WireGuardError::Config(format!("Invalid endpoint '{}': {}", self.endpoint, e)))
+        self.endpoint.parse::<SocketAddr>().map_err(|e| {
+            WireGuardError::Config(format!("Invalid endpoint '{}': {}", self.endpoint, e))
+        })
     }
 
     /// Decode the base64 public key into 32 bytes.
@@ -142,16 +142,16 @@ impl WgConfig {
 
     /// Parse address string into IpAddr.
     pub fn ip_addr(&self) -> Result<IpAddr> {
-        self.address
-            .parse::<IpAddr>()
-            .map_err(|e| WireGuardError::Config(format!("Invalid address '{}': {}", self.address, e)))
+        self.address.parse::<IpAddr>().map_err(|e| {
+            WireGuardError::Config(format!("Invalid address '{}': {}", self.address, e))
+        })
     }
 
     /// Parse address as Ipv4.
     pub fn ipv4_addr(&self) -> Result<Ipv4Addr> {
-        self.address
-            .parse::<Ipv4Addr>()
-            .map_err(|e| WireGuardError::Config(format!("Invalid IPv4 address '{}': {}", self.address, e)))
+        self.address.parse::<Ipv4Addr>().map_err(|e| {
+            WireGuardError::Config(format!("Invalid IPv4 address '{}': {}", self.address, e))
+        })
     }
 }
 
@@ -192,21 +192,20 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
     let mut current_peer_allowed_ips: Vec<String> = Vec::new();
     let mut current_peer_keepalive: Option<u16> = None;
 
-    let flush_peer =
-        |pubkey: &mut String,
-         endpoint: &mut String,
-         allowed_ips: &mut Vec<String>,
-         keepalive: &mut Option<u16>,
-         peers: &mut Vec<WgPeer>| {
-            if !pubkey.is_empty() {
-                peers.push(WgPeer {
-                    public_key: std::mem::take(pubkey),
-                    endpoint: std::mem::take(endpoint),
-                    allowed_ips: std::mem::take(allowed_ips),
-                    persistent_keepalive: keepalive.take(),
-                });
-            }
-        };
+    let flush_peer = |pubkey: &mut String,
+                      endpoint: &mut String,
+                      allowed_ips: &mut Vec<String>,
+                      keepalive: &mut Option<u16>,
+                      peers: &mut Vec<WgPeer>| {
+        if !pubkey.is_empty() {
+            peers.push(WgPeer {
+                public_key: std::mem::take(pubkey),
+                endpoint: std::mem::take(endpoint),
+                allowed_ips: std::mem::take(allowed_ips),
+                persistent_keepalive: keepalive.take(),
+            });
+        }
+    };
 
     for line in content.lines() {
         let line = line.trim();
@@ -278,11 +277,9 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
                         value.split(',').map(|s| s.trim().to_string()).collect();
                 }
                 "PersistentKeepalive" => {
-                    current_peer_keepalive = Some(
-                        value
-                            .parse()
-                            .map_err(|_| WireGuardError::Config("Invalid PersistentKeepalive".into()))?,
-                    );
+                    current_peer_keepalive = Some(value.parse().map_err(|_| {
+                        WireGuardError::Config("Invalid PersistentKeepalive".into())
+                    })?);
                 }
                 _ => {}
             },
