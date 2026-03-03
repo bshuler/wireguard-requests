@@ -153,7 +153,7 @@ A background Rust thread runs the smoltcp ↔ boringtun ↔ UDP poll loop. Pytho
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone and build
-git clone https://github.com/yourorg/wireguard-requests
+git clone https://github.com/bshuler/wireguard-requests
 cd wireguard-requests
 pip install maturin
 maturin develop --manifest-path rust/Cargo.toml
