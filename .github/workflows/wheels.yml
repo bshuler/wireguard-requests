@@ -77,46 +77,18 @@ jobs:
           name: wheels-musllinux-${{ matrix.target }}
           path: dist/*.whl
 
-  # Build wheels for macOS (need explicit Python version matrix).
+  # Build wheels for macOS.
+  # Use macos-14 (Apple Silicon) for all builds; cross-compile x86_64.
   build-macos:
     name: macOS ${{ matrix.target }} py${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # macOS x86_64 (Intel)
-          - os: macos-13
-            target: x86_64-apple-darwin
-            python-version: "3.9"
-          - os: macos-13
-            target: x86_64-apple-darwin
-            python-version: "3.10"
-          - os: macos-13
-            target: x86_64-apple-darwin
-            python-version: "3.11"
-          - os: macos-13
-            target: x86_64-apple-darwin
-            python-version: "3.12"
-          - os: macos-13
-            target: x86_64-apple-darwin
-            python-version: "3.13"
-          # macOS aarch64 (Apple Silicon)
-          - os: macos-14
-            target: aarch64-apple-darwin
-            python-version: "3.9"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            python-version: "3.10"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            python-version: "3.11"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            python-version: "3.12"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            python-version: "3.13"
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
