@@ -57,6 +57,7 @@ features = ["pyo3/extension-module"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+norecursedirs = ["wg-config"]
 markers = [
     "integration: marks tests requiring WireGuard Docker peer",
 ]

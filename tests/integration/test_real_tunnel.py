@@ -7,7 +7,6 @@ tunnel HTTP requests through the WireGuard connection.
 Run with: pytest tests/integration -v -m integration
 """
 
-
 import pytest
 
 pytestmark = pytest.mark.integration
