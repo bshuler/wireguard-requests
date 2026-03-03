@@ -1,0 +1,56 @@
+[package]
+name = "wireguard-requests"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "Apache-2.0"
+description = "Userspace WireGuard tunnel for Python — drop-in socket replacement"
+
+[lib]
+name = "wireguard_requests_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+# WireGuard protocol implementation
+boringtun = "0.6"
+
+# Userspace TCP/IP stack
+smoltcp = { version = "0.11", default-features = false, features = [
+    "medium-ip",
+    "proto-ipv4",
+    "proto-ipv6",
+    "socket-tcp",
+    "socket-udp",
+    "socket-dns",
+    "alloc",
+    "log",
+] }
+
+# Python bindings
+pyo3 = { version = "0.22", features = ["macros", "extension-module"] }
+
+# Thread communication
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+# Socket utilities
+socket2 = { version = "0.5", features = ["all"] }
+
+# Error handling
+thiserror = "2"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Encoding / crypto utilities
+base64 = "0.22"
+ipnetwork = "0.20"
+bytes = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "throughput"
+harness = false

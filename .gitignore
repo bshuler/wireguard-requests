@@ -1,0 +1,50 @@
+# Rust
+target/
+rust/target/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# maturin
+*.whl
+*.dylib
+*.dSYM/
+
+# Docker volumes (integration tests)
+tests/integration/wg-config/
+
+# Coverage
+.coverage
+htmlcov/
+
+# pytest
+.pytest_cache/
+pytest-cache-files-*/
+
+# oh-my-claudecode
+.omc/
+.claude/

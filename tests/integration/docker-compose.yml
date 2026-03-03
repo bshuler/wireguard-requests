@@ -1,0 +1,64 @@
+# WireGuard test peer for integration testing.
+#
+# Starts a WireGuard server with an HTTP server behind it.
+# The client (our library) connects to the WireGuard peer and
+# makes HTTP requests to the HTTP server through the tunnel.
+#
+# Network:
+#   WireGuard server: 10.13.13.1/24, endpoint: localhost:51820
+#   Test client:      10.13.13.2/24
+#   HTTP server:      accessible at 10.13.13.1:8080 through tunnel
+
+services:
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: wg-test-server
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=127.0.0.1
+      - SERVERPORT=51820
+      - PEERS=testclient
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+    volumes:
+      - ./wg-config:/config
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  httpserver:
+    image: python:3.12-slim
+    container_name: wg-test-http
+    network_mode: "service:wireguard"
+    command: >
+      python -c "
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+      import json
+
+      class Handler(BaseHTTPRequestHandler):
+          def do_GET(self):
+              self.send_response(200)
+              self.send_header('Content-Type', 'application/json')
+              self.end_headers()
+              body = json.dumps({
+                  'status': 'ok',
+                  'path': self.path,
+                  'tunnel': 'wireguard',
+                  'client_address': self.client_address[0],
+              })
+              self.wfile.write(body.encode())
+
+          def log_message(self, format, *args):
+              pass  # Suppress logs
+
+      HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
+      "
+    depends_on:
+      - wireguard
