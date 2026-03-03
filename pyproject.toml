@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Drop-in socket replacement for transparent WireGuard tunneling in Python"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Python Developer", email = "pypi.org@cri.xyz" },
 ]
