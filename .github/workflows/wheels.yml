@@ -186,6 +186,7 @@ jobs:
           packages-dir: dist/
           verbose: true
           attestations: false
+          skip-existing: true
 
   # Create GitHub Release with all artifacts.
   github-release:
