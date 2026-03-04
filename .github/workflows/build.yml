@@ -94,8 +94,10 @@ jobs:
           .venv/bin/maturin develop --manifest-path rust/Cargo.toml
       - name: Start WireGuard test peer
         run: docker compose -f tests/integration/docker-compose.yml up -d
-      - name: Wait for peer
-        run: sleep 5
+      - name: Wait for peer and fix permissions
+        run: |
+          sleep 10
+          sudo chmod -R a+rX tests/integration/wg-config || true
       - name: Run integration tests
         run: .venv/bin/pytest tests/integration -v -m integration
       - name: Stop WireGuard test peer
