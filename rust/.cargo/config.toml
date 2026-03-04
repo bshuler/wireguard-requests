@@ -1,0 +1,4 @@
+[env]
+# smoltcp DNS socket configuration. Defaults are 1 each, which panics with >1 server.
+SMOLTCP_DNS_MAX_SERVER_COUNT = "4"
+SMOLTCP_DNS_MAX_RESULT_COUNT = "4"
