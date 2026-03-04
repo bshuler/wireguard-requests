@@ -10,11 +10,13 @@ mod packet;
 mod stream;
 mod tun_interface;
 mod tunnel;
+mod udp_socket;
 
 use config::{WgConfig, WgPeer};
 use pyo3::prelude::*;
 use stream::WgStream;
 use tunnel::WgTunnel;
+use udp_socket::WgUdpSocket;
 
 /// Native extension module for wireguard-requests.
 ///
@@ -27,6 +29,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<WgTunnel>()?;
     m.add_class::<WgStream>()?;
+    m.add_class::<WgUdpSocket>()?;
     m.add_class::<WgConfig>()?;
     m.add_class::<WgPeer>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

@@ -20,6 +20,7 @@ class Peer:
     endpoint: str
     allowed_ips: List[str] = field(default_factory=lambda: ["0.0.0.0/0"])
     persistent_keepalive: Optional[int] = None
+    preshared_key: Optional[str] = None
 
 
 @dataclass
@@ -41,6 +42,16 @@ class WireGuardConfig:
                 endpoint="203.0.113.1:51820",
             )],
         )
+
+        # Dual-stack (IPv4 + IPv6):
+        config = WireGuardConfig(
+            private_key="...",
+            address="10.0.0.2",
+            address_v6="fd00::2",
+            prefix_len=24,
+            prefix_len_v6=64,
+            peers=[...],
+        )
     """
 
     private_key: str
@@ -50,6 +61,8 @@ class WireGuardConfig:
     listen_port: int = 0
     mtu: int = 1420
     dns: List[str] = field(default_factory=list)
+    address_v6: Optional[str] = None
+    prefix_len_v6: Optional[int] = None
 
     @classmethod
     def from_file(cls, path: Union[str, Path]) -> WireGuardConfig:
@@ -91,6 +104,7 @@ class WireGuardConfig:
                         endpoint=current_peer.get("endpoint", ""),
                         allowed_ips=current_peer.get("allowed_ips", ["0.0.0.0/0"]),
                         persistent_keepalive=current_peer.get("persistent_keepalive"),
+                        preshared_key=current_peer.get("preshared_key"),
                     )
                 )
 
@@ -118,16 +132,21 @@ class WireGuardConfig:
                     config_data["private_key"] = value
                 elif key == "Address":
                     # Handle comma-separated addresses (e.g. dual-stack IPv4, IPv6).
-                    # Use the first IPv4 address.
                     addresses = [a.strip() for a in value.split(",")]
                     ipv4_addr = None
+                    ipv6_addr = None
                     for addr_entry in addresses:
-                        # Skip IPv6 addresses.
-                        if ":" in addr_entry.split("/")[0]:
-                            continue
-                        ipv4_addr = addr_entry
-                        break
+                        raw = addr_entry.split("/")[0]
+                        if ":" in raw:
+                            # IPv6 address — capture the first one found.
+                            if ipv6_addr is None:
+                                ipv6_addr = addr_entry
+                        else:
+                            # IPv4 address — capture the first one found.
+                            if ipv4_addr is None:
+                                ipv4_addr = addr_entry
                     if ipv4_addr is None:
+                        # Pure IPv6 config: treat first address as the primary.
                         ipv4_addr = addresses[0]
                     if "/" in ipv4_addr:
                         addr, prefix = ipv4_addr.split("/", 1)
@@ -135,6 +154,14 @@ class WireGuardConfig:
                         config_data["prefix_len"] = int(prefix.strip())
                     else:
                         config_data["address"] = ipv4_addr
+                    # Capture IPv6 address if present.
+                    if ipv6_addr is not None:
+                        if "/" in ipv6_addr:
+                            addr6, prefix6 = ipv6_addr.split("/", 1)
+                            config_data["address_v6"] = addr6.strip()
+                            config_data["prefix_len_v6"] = int(prefix6.strip())
+                        else:
+                            config_data["address_v6"] = ipv6_addr
                 elif key == "ListenPort":
                     config_data["listen_port"] = int(value)
                 elif key == "MTU":
@@ -151,6 +178,8 @@ class WireGuardConfig:
                     current_peer["allowed_ips"] = [s.strip() for s in value.split(",")]
                 elif key == "PersistentKeepalive":
                     current_peer["persistent_keepalive"] = int(value)
+                elif key == "PresharedKey":
+                    current_peer["preshared_key"] = value
 
         # Flush last peer
         if current_section == "Peer":
@@ -180,6 +209,7 @@ class WireGuardConfig:
                 endpoint=p.endpoint,
                 allowed_ips=p.allowed_ips,
                 persistent_keepalive=p.persistent_keepalive,
+                preshared_key=p.preshared_key,
             )
             for p in self.peers
         ]
@@ -191,4 +221,6 @@ class WireGuardConfig:
             listen_port=self.listen_port,
             mtu=self.mtu,
             dns=self.dns,
+            address_v6=self.address_v6,
+            prefix_len_v6=self.prefix_len_v6,
         )

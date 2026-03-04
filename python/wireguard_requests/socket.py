@@ -27,6 +27,7 @@ class WireGuardSocket:
 
     # Class-level constants matching socket module.
     AF_INET = stdlib_socket.AF_INET
+    AF_INET6 = stdlib_socket.AF_INET6
     SOCK_STREAM = stdlib_socket.SOCK_STREAM
 
     def __init__(self, tunnel: _native.WgTunnel):
@@ -35,6 +36,7 @@ class WireGuardSocket:
         self._remote_addr: Optional[Tuple[str, int]] = None
         self._timeout: Optional[float] = None
         self._closed = False
+        self._makefile_refs = 0
 
     def connect(self, address: Tuple[str, int]) -> None:
         """Connect to a remote host through the WireGuard tunnel.
@@ -85,6 +87,8 @@ class WireGuardSocket:
             Bytes received. Empty bytes means the peer closed the connection.
         """
         if self._stream is None:
+            if self._closed:
+                return b""
             raise OSError("Not connected")
         return bytes(self._stream.recv(bufsize))
 
@@ -96,11 +100,22 @@ class WireGuardSocket:
         return n
 
     def close(self) -> None:
-        """Close the connection."""
+        """Close the connection.
+
+        If makefile() wrappers are still active, defer stream destruction
+        until the last wrapper closes — matching real socket fd ref-counting.
+        """
         if self._closed:
             return
         self._closed = True
-        if self._stream is not None:
+        if self._makefile_refs < 1 and self._stream is not None:
+            self._stream.close()
+            self._stream = None
+
+    def _decref_socketios(self) -> None:
+        """Called by _SocketFileWrapper.close() to decrement makefile refs."""
+        self._makefile_refs -= 1
+        if self._closed and self._makefile_refs < 1 and self._stream is not None:
             self._stream.close()
             self._stream = None
 
@@ -161,13 +176,16 @@ class WireGuardSocket:
         """Create a file-like object for the socket.
 
         This is used by http.client.HTTPConnection for reading responses.
+        Increments a reference counter so that close() defers stream
+        destruction until all makefile wrappers are closed.
         """
         if "b" not in mode:
             mode = mode + "b"
 
+        self._makefile_refs += 1
         raw = _SocketFileWrapper(self)
 
-        if buffering == 0 or "b" in mode and buffering < 0:
+        if buffering == 0 or ("b" in mode and buffering < 0):
             return raw
 
         if buffering < 0:
@@ -182,6 +200,9 @@ class WireGuardSocket:
 
     @property
     def family(self) -> int:
+        # Report the correct address family based on the connected address.
+        if self._remote_addr is not None and ":" in self._remote_addr[0]:
+            return stdlib_socket.AF_INET6
         return stdlib_socket.AF_INET
 
     @property
@@ -191,6 +212,34 @@ class WireGuardSocket:
     @property
     def proto(self) -> int:
         return 0
+
+    def wrap_tls(self, hostname: str, context=None):
+        """Wrap this socket with TLS for HTTPS communication.
+
+        Uses memory BIOs (ssl.MemoryBIO + ssl.SSLObject) since we don't
+        have a real file descriptor that ssl.wrap_socket() requires.
+
+        Args:
+            hostname: Server hostname for SNI and certificate verification.
+            context: Optional ssl.SSLContext. Uses the default secure context if None.
+
+        Returns:
+            WireGuardTlsSocket wrapping this WireGuard socket.
+
+        Example:
+            with wireguard_context(config) as tunnel:
+                sock = WireGuardSocket(tunnel)
+                sock.connect(("example.com", 443))
+                tls = sock.wrap_tls("example.com")
+                tls.sendall(b"GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n")
+        """
+        import ssl
+
+        from .tls import WireGuardTlsSocket
+
+        if context is None:
+            context = ssl.create_default_context()
+        return WireGuardTlsSocket(self, context, server_hostname=hostname)
 
     def __enter__(self):
         return self
@@ -235,5 +284,4 @@ class _SocketFileWrapper(io.RawIOBase):
     def close(self) -> None:
         if not self.closed:
             super().close()
-            # Don't close the underlying socket — makefile objects
-            # shouldn't own the socket lifecycle.
+            self._sock._decref_socketios()

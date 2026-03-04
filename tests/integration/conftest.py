@@ -68,3 +68,17 @@ def wg_config(wg_server):
     if not config_path.exists():
         pytest.skip("WireGuard client config not found")
     return WireGuardConfig.from_file(config_path)
+
+
+@pytest.fixture
+def wg_config_with_dns(wg_config):
+    """WireGuard client config with DNS set to the tunnel's DNS server.
+
+    The auto-generated peer config may not include a DNS entry pointing
+    at the in-tunnel dnsmasq server.  This fixture clones the config and
+    overrides ``dns`` so that tunnel-scoped names (e.g. test.wg.local)
+    resolve correctly.
+    """
+    import dataclasses
+
+    return dataclasses.replace(wg_config, dns=["10.13.13.1"])

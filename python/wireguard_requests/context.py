@@ -9,6 +9,7 @@ transparently tunnel through WireGuard.
 from __future__ import annotations
 
 import socket as stdlib_socket
+import ssl as stdlib_ssl
 from contextlib import contextmanager
 from typing import Iterator, Optional, Type
 
@@ -25,6 +26,10 @@ def wireguard_context(config: WireGuardConfig) -> Iterator[object]:
     Monkeypatches `socket.socket` so that any AF_INET + SOCK_STREAM socket
     creation returns a WireGuardSocket instead. Non-TCP sockets (UDP, Unix,
     etc.) continue to use the real socket implementation.
+
+    Also monkeypatches `ssl.SSLContext.wrap_socket` so that when libraries
+    like urllib3/requests wrap a WireGuardSocket with TLS, we use memory
+    BIOs instead of requiring a real file descriptor.
 
     The tunnel is created on entry and closed on exit.
 
@@ -46,6 +51,7 @@ def wireguard_context(config: WireGuardConfig) -> Iterator[object]:
 
     # Create the Rust tunnel (import lazily to avoid import-time dependency).
     from . import _native
+    from .tls import WireGuardTlsSocket
 
     native_config = config.to_native()
     tunnel = _native.WgTunnel(native_config)
@@ -66,24 +72,42 @@ def wireguard_context(config: WireGuardConfig) -> Iterator[object]:
             proto: int = 0,
             fileno=None,
         ):
-            # Only intercept AF_INET + SOCK_STREAM (TCP over IPv4).
+            # Intercept TCP sockets for both IPv4 and IPv6 — the Rust side
+            # handles address resolution and picks the right family.
             if (
-                family == stdlib_socket.AF_INET
+                family in (stdlib_socket.AF_INET, stdlib_socket.AF_INET6)
                 and (type & stdlib_socket.SOCK_STREAM)
                 and fileno is None
             ):
                 return WireGuardSocket(tunnel)
-            # Everything else (UDP, Unix, IPv6, etc.) uses real sockets.
+            # Everything else (UDP, Unix, etc.) uses real sockets.
             return original(family, type, proto, fileno)
 
-    # Apply the monkeypatch.
+    # Monkeypatch ssl.SSLContext.wrap_socket to handle WireGuardSocket.
+    # urllib3 calls ctx.wrap_socket(sock, server_hostname=host) which
+    # fails because ssl needs a real fd. We intercept and use memory BIOs.
+    original_wrap_socket = stdlib_ssl.SSLContext.wrap_socket
+
+    def patched_wrap_socket(self, sock, *args, **kwargs):
+        if isinstance(sock, WireGuardSocket):
+            server_hostname = kwargs.get("server_hostname")
+            return WireGuardTlsSocket(
+                sock,
+                self,
+                server_hostname=server_hostname,
+            )
+        return original_wrap_socket(self, sock, *args, **kwargs)
+
+    # Apply the monkeypatches.
     stdlib_socket.socket = PatchedSocket
+    stdlib_ssl.SSLContext.wrap_socket = patched_wrap_socket
 
     try:
         yield tunnel
     finally:
-        # Restore original socket class.
+        # Restore originals.
         stdlib_socket.socket = original
+        stdlib_ssl.SSLContext.wrap_socket = original_wrap_socket
         _original_socket_class = None
 
         # Shut down the tunnel.

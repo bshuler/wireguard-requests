@@ -1,6 +1,6 @@
 use crate::error::{Result, WireGuardError};
 use pyo3::prelude::*;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 /// A WireGuard peer configuration.
 #[pyclass]
@@ -17,23 +17,28 @@ pub struct WgPeer {
 
     #[pyo3(get, set)]
     pub persistent_keepalive: Option<u16>,
+
+    #[pyo3(get, set)]
+    pub preshared_key: Option<String>,
 }
 
 #[pymethods]
 impl WgPeer {
     #[new]
-    #[pyo3(signature = (public_key, endpoint, allowed_ips, persistent_keepalive=None))]
+    #[pyo3(signature = (public_key, endpoint, allowed_ips, persistent_keepalive=None, preshared_key=None))]
     fn new(
         public_key: String,
         endpoint: String,
         allowed_ips: Vec<String>,
         persistent_keepalive: Option<u16>,
+        preshared_key: Option<String>,
     ) -> Self {
         WgPeer {
             public_key,
             endpoint,
             allowed_ips,
             persistent_keepalive,
+            preshared_key,
         }
     }
 
@@ -58,6 +63,14 @@ impl WgPeer {
     /// Decode the base64 public key into 32 bytes.
     pub fn public_key_bytes(&self) -> Result<[u8; 32]> {
         decode_key(&self.public_key)
+    }
+
+    /// Decode the optional base64 preshared key into 32 bytes.
+    pub fn preshared_key_bytes(&self) -> Result<Option<[u8; 32]>> {
+        match &self.preshared_key {
+            Some(key) => Ok(Some(decode_key(key)?)),
+            None => Ok(None),
+        }
     }
 }
 
@@ -85,12 +98,18 @@ pub struct WgConfig {
 
     #[pyo3(get, set)]
     pub peers: Vec<WgPeer>,
+
+    #[pyo3(get, set)]
+    pub address_v6: Option<String>,
+
+    #[pyo3(get, set)]
+    pub prefix_len_v6: Option<u8>,
 }
 
 #[pymethods]
 impl WgConfig {
     #[new]
-    #[pyo3(signature = (private_key, address, peers, prefix_len=24, listen_port=0, mtu=1420, dns=vec![]))]
+    #[pyo3(signature = (private_key, address, peers, prefix_len=24, listen_port=0, mtu=1420, dns=vec![], address_v6=None, prefix_len_v6=None))]
     fn new(
         private_key: String,
         address: String,
@@ -99,6 +118,8 @@ impl WgConfig {
         listen_port: u16,
         mtu: u16,
         dns: Vec<String>,
+        address_v6: Option<String>,
+        prefix_len_v6: Option<u8>,
     ) -> Self {
         WgConfig {
             private_key,
@@ -108,6 +129,8 @@ impl WgConfig {
             mtu,
             dns,
             peers,
+            address_v6,
+            prefix_len_v6,
         }
     }
 
@@ -153,6 +176,15 @@ impl WgConfig {
             WireGuardError::Config(format!("Invalid IPv4 address '{}': {}", self.address, e))
         })
     }
+
+    /// Parse IPv6 address string into Ipv6Addr.
+    pub fn ipv6_addr(&self) -> Result<Ipv6Addr> {
+        self.address_v6
+            .as_ref()
+            .ok_or_else(|| WireGuardError::Config("No IPv6 address configured".into()))?
+            .parse::<Ipv6Addr>()
+            .map_err(|e| WireGuardError::Config(format!("Invalid IPv6 address: {}", e)))
+    }
 }
 
 /// Decode a base64-encoded WireGuard key into 32 bytes.
@@ -185,17 +217,21 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
     let mut mtu: u16 = 1420;
     let mut dns: Vec<String> = Vec::new();
     let mut peers: Vec<WgPeer> = Vec::new();
+    let mut address_v6: Option<String> = None;
+    let mut prefix_len_v6: Option<u8> = None;
 
     let mut current_section: Option<&str> = None;
     let mut current_peer_pubkey = String::new();
     let mut current_peer_endpoint = String::new();
     let mut current_peer_allowed_ips: Vec<String> = Vec::new();
     let mut current_peer_keepalive: Option<u16> = None;
+    let mut current_peer_preshared_key: Option<String> = None;
 
     let flush_peer = |pubkey: &mut String,
                       endpoint: &mut String,
                       allowed_ips: &mut Vec<String>,
                       keepalive: &mut Option<u16>,
+                      preshared_key: &mut Option<String>,
                       peers: &mut Vec<WgPeer>| {
         if !pubkey.is_empty() {
             peers.push(WgPeer {
@@ -203,6 +239,7 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
                 endpoint: std::mem::take(endpoint),
                 allowed_ips: std::mem::take(allowed_ips),
                 persistent_keepalive: keepalive.take(),
+                preshared_key: preshared_key.take(),
             });
         }
     };
@@ -222,6 +259,7 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
                     &mut current_peer_endpoint,
                     &mut current_peer_allowed_ips,
                     &mut current_peer_keepalive,
+                    &mut current_peer_preshared_key,
                     &mut peers,
                 );
             }
@@ -244,14 +282,27 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
             Some("Interface") => match key {
                 "PrivateKey" => private_key = value.to_string(),
                 "Address" => {
-                    if let Some((addr, prefix)) = value.split_once('/') {
-                        address = addr.trim().to_string();
-                        prefix_len = prefix
-                            .trim()
-                            .parse()
-                            .map_err(|_| WireGuardError::Config("Invalid prefix length".into()))?;
-                    } else {
-                        address = value.to_string();
+                    // Support dual-stack: Address = 10.0.0.2/24, fd00::2/64
+                    for part in value.split(',') {
+                        let part = part.trim();
+                        let (addr, plen) = if let Some((a, p)) = part.split_once('/') {
+                            let parsed_plen: u8 = p
+                                .trim()
+                                .parse()
+                                .map_err(|_| WireGuardError::Config("Invalid prefix length".into()))?;
+                            (a.trim().to_string(), Some(parsed_plen))
+                        } else {
+                            (part.to_string(), None)
+                        };
+
+                        // Detect IPv6 by presence of ':' character
+                        if addr.contains(':') {
+                            address_v6 = Some(addr);
+                            prefix_len_v6 = Some(plen.unwrap_or(64));
+                        } else {
+                            address = addr;
+                            prefix_len = plen.unwrap_or(24);
+                        }
                     }
                 }
                 "ListenPort" => {
@@ -281,6 +332,7 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
                         WireGuardError::Config("Invalid PersistentKeepalive".into())
                     })?);
                 }
+                "PresharedKey" => current_peer_preshared_key = Some(value.to_string()),
                 _ => {}
             },
             _ => {}
@@ -293,6 +345,7 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
         &mut current_peer_endpoint,
         &mut current_peer_allowed_ips,
         &mut current_peer_keepalive,
+        &mut current_peer_preshared_key,
         &mut peers,
     );
 
@@ -314,6 +367,8 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
         mtu,
         dns,
         peers,
+        address_v6,
+        prefix_len_v6,
     })
 }
 
@@ -365,6 +420,45 @@ AllowedIPs = 10.0.1.0/24
 "#;
         let config = parse_conf(conf).unwrap();
         assert_eq!(config.peers.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_dual_stack_conf() {
+        let conf = r#"
+[Interface]
+PrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=
+Address = 10.0.0.2/24, fd00::2/64
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=
+Endpoint = 203.0.113.1:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+"#;
+        let config = parse_conf(conf).unwrap();
+        assert_eq!(config.address, "10.0.0.2");
+        assert_eq!(config.prefix_len, 24);
+        assert_eq!(config.address_v6, Some("fd00::2".to_string()));
+        assert_eq!(config.prefix_len_v6, Some(64));
+    }
+
+    #[test]
+    fn test_parse_ipv4_only_conf() {
+        let conf = r#"
+[Interface]
+PrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=
+Endpoint = 203.0.113.1:51820
+AllowedIPs = 0.0.0.0/0
+"#;
+        let config = parse_conf(conf).unwrap();
+        assert_eq!(config.address, "10.0.0.2");
+        assert_eq!(config.prefix_len, 24);
+        assert_eq!(config.address_v6, None);
+        assert_eq!(config.prefix_len_v6, None);
     }
 
     #[test]

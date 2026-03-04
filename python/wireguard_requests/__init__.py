@@ -31,6 +31,10 @@ def __getattr__(name):
         from .socket import WireGuardSocket
 
         return WireGuardSocket
+    if name == "WireGuardUdpSocket":
+        from .udp_socket import WireGuardUdpSocket
+
+        return WireGuardUdpSocket
     if name == "AsyncWireGuardSocket":
         from .async_socket import AsyncWireGuardSocket
 
@@ -51,6 +55,7 @@ __version__ = "0.1.0"
 __all__ = [
     # Core
     "WireGuardSocket",
+    "WireGuardUdpSocket",
     "AsyncWireGuardSocket",
     "WireGuardConfig",
     "Peer",
