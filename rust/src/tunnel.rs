@@ -315,7 +315,7 @@ impl WgTunnel {
         let tunn = Tunn::new(
             private_key.into(),
             peer_public_key.into(),
-            preshared_key.map(|k| k.into()),
+            preshared_key,
             keepalive,
             0,    // tunnel index
             None, // rate limiter
@@ -524,10 +524,8 @@ impl WgTunnel {
                         };
 
                         // Initiate TCP connection.
-                        let local_endpoint =
-                            smoltcp::wire::IpEndpoint::new(local_addr, local_port);
-                        let remote_endpoint =
-                            smoltcp::wire::IpEndpoint::new(dst_addr, dst_port);
+                        let local_endpoint = smoltcp::wire::IpEndpoint::new(local_addr, local_port);
+                        let remote_endpoint = smoltcp::wire::IpEndpoint::new(dst_addr, dst_port);
 
                         let sock = sockets.get_mut::<tcp::Socket>(handle);
                         match sock.connect(iface.context(), remote_endpoint, local_endpoint) {
@@ -697,21 +695,17 @@ impl WgTunnel {
                                 match sock.recv_slice(&mut buf) {
                                     Ok((n, metadata)) => {
                                         buf.truncate(n);
-                                        let _ =
-                                            response.send(Ok((buf, metadata.endpoint)));
+                                        let _ = response.send(Ok((buf, metadata.endpoint)));
                                     }
                                     Err(e) => {
-                                        let _ =
-                                            response.send(Err(WireGuardError::SmolTcp(format!(
-                                                "UDP recv failed: {:?}",
-                                                e
-                                            ))));
+                                        let _ = response.send(Err(WireGuardError::SmolTcp(
+                                            format!("UDP recv failed: {:?}", e),
+                                        )));
                                     }
                                 }
                             } else {
-                                let _ = response.send(Err(WireGuardError::SmolTcp(
-                                    "no data available".into(),
-                                )));
+                                let _ = response
+                                    .send(Err(WireGuardError::SmolTcp("no data available".into())));
                             }
                         } else {
                             let _ = response.send(Err(WireGuardError::InvalidState(
@@ -836,77 +830,80 @@ impl WgTunnel {
             }
 
             // 4b. Check pending DNS queries.
-            if dns_socket_handle.is_some() && !pending_dns.is_empty() {
-                let dns_handle = dns_socket_handle.unwrap();
-                let mut i = 0;
-                while i < pending_dns.len() {
-                    let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
-                    match dns_sock.get_query_result(pending_dns[i].query_handle) {
-                        Ok(addrs) if !addrs.is_empty() => {
-                            let entry = pending_dns.swap_remove(i);
-                            let _ = entry.response.send(Ok(addrs[0]));
-                            // Don't increment i; swap_remove moved last element here
-                        }
-                        Ok(_) if pending_dns[i].can_fallback => {
-                            // AAAA returned empty, try A query as fallback.
-                            let hostname = pending_dns[i].hostname.clone();
-                            let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
-                            match dns_sock.start_query(
-                                iface.context(),
-                                &hostname,
-                                smoltcp::wire::DnsQueryType::A,
-                            ) {
-                                Ok(new_qh) => {
-                                    pending_dns[i].query_handle = new_qh;
-                                    pending_dns[i].can_fallback = false;
-                                    i += 1;
-                                }
-                                Err(e) => {
-                                    let entry = pending_dns.swap_remove(i);
-                                    let _ = entry.response.send(Err(WireGuardError::Config(
-                                        format!("DNS fallback query failed: {}", e),
-                                    )));
+            if let Some(dns_handle) = dns_socket_handle {
+                if !pending_dns.is_empty() {
+                    let mut i = 0;
+                    while i < pending_dns.len() {
+                        let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
+                        match dns_sock.get_query_result(pending_dns[i].query_handle) {
+                            Ok(addrs) if !addrs.is_empty() => {
+                                let entry = pending_dns.swap_remove(i);
+                                let _ = entry.response.send(Ok(addrs[0]));
+                                // Don't increment i; swap_remove moved last element here
+                            }
+                            Ok(_) if pending_dns[i].can_fallback => {
+                                // AAAA returned empty, try A query as fallback.
+                                let hostname = pending_dns[i].hostname.clone();
+                                let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
+                                match dns_sock.start_query(
+                                    iface.context(),
+                                    &hostname,
+                                    smoltcp::wire::DnsQueryType::A,
+                                ) {
+                                    Ok(new_qh) => {
+                                        pending_dns[i].query_handle = new_qh;
+                                        pending_dns[i].can_fallback = false;
+                                        i += 1;
+                                    }
+                                    Err(e) => {
+                                        let entry = pending_dns.swap_remove(i);
+                                        let _ = entry.response.send(Err(WireGuardError::Config(
+                                            format!("DNS fallback query failed: {}", e),
+                                        )));
+                                    }
                                 }
                             }
-                        }
-                        Ok(_) => {
-                            // No results and no fallback available.
-                            let entry = pending_dns.swap_remove(i);
-                            let _ = entry.response.send(Err(WireGuardError::Config(
-                                "DNS query returned no results".into(),
-                            )));
-                        }
-                        Err(dns::GetQueryResultError::Pending) => {
-                            // Still waiting, skip.
-                            i += 1;
-                        }
-                        Err(dns::GetQueryResultError::Failed) if pending_dns[i].can_fallback => {
-                            // AAAA failed, try A query as fallback.
-                            let hostname = pending_dns[i].hostname.clone();
-                            let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
-                            match dns_sock.start_query(
-                                iface.context(),
-                                &hostname,
-                                smoltcp::wire::DnsQueryType::A,
-                            ) {
-                                Ok(new_qh) => {
-                                    pending_dns[i].query_handle = new_qh;
-                                    pending_dns[i].can_fallback = false;
-                                    i += 1;
-                                }
-                                Err(e) => {
-                                    let entry = pending_dns.swap_remove(i);
-                                    let _ = entry.response.send(Err(WireGuardError::Config(
-                                        format!("DNS fallback query failed: {}", e),
-                                    )));
+                            Ok(_) => {
+                                // No results and no fallback available.
+                                let entry = pending_dns.swap_remove(i);
+                                let _ = entry.response.send(Err(WireGuardError::Config(
+                                    "DNS query returned no results".into(),
+                                )));
+                            }
+                            Err(dns::GetQueryResultError::Pending) => {
+                                // Still waiting, skip.
+                                i += 1;
+                            }
+                            Err(dns::GetQueryResultError::Failed)
+                                if pending_dns[i].can_fallback =>
+                            {
+                                // AAAA failed, try A query as fallback.
+                                let hostname = pending_dns[i].hostname.clone();
+                                let dns_sock = sockets.get_mut::<dns::Socket>(dns_handle);
+                                match dns_sock.start_query(
+                                    iface.context(),
+                                    &hostname,
+                                    smoltcp::wire::DnsQueryType::A,
+                                ) {
+                                    Ok(new_qh) => {
+                                        pending_dns[i].query_handle = new_qh;
+                                        pending_dns[i].can_fallback = false;
+                                        i += 1;
+                                    }
+                                    Err(e) => {
+                                        let entry = pending_dns.swap_remove(i);
+                                        let _ = entry.response.send(Err(WireGuardError::Config(
+                                            format!("DNS fallback query failed: {}", e),
+                                        )));
+                                    }
                                 }
                             }
-                        }
-                        Err(_) => {
-                            let entry = pending_dns.swap_remove(i);
-                            let _ = entry.response.send(Err(WireGuardError::Config(
-                                "DNS query failed".into(),
-                            )));
+                            Err(_) => {
+                                let entry = pending_dns.swap_remove(i);
+                                let _ = entry
+                                    .response
+                                    .send(Err(WireGuardError::Config("DNS query failed".into())));
+                            }
                         }
                     }
                 }

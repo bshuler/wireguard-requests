@@ -110,6 +110,7 @@ pub struct WgConfig {
 impl WgConfig {
     #[new]
     #[pyo3(signature = (private_key, address, peers, prefix_len=24, listen_port=0, mtu=1420, dns=vec![], address_v6=None, prefix_len_v6=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         private_key: String,
         address: String,
@@ -286,10 +287,9 @@ fn parse_conf(content: &str) -> Result<WgConfig> {
                     for part in value.split(',') {
                         let part = part.trim();
                         let (addr, plen) = if let Some((a, p)) = part.split_once('/') {
-                            let parsed_plen: u8 = p
-                                .trim()
-                                .parse()
-                                .map_err(|_| WireGuardError::Config("Invalid prefix length".into()))?;
+                            let parsed_plen: u8 = p.trim().parse().map_err(|_| {
+                                WireGuardError::Config("Invalid prefix length".into())
+                            })?;
                             (a.trim().to_string(), Some(parsed_plen))
                         } else {
                             (part.to_string(), None)

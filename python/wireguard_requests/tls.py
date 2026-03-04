@@ -8,8 +8,8 @@ ssl.SSLObject to implement TLS without real fds.
 from __future__ import annotations
 
 import io
-import ssl
 import socket as stdlib_socket
+import ssl
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 if TYPE_CHECKING:

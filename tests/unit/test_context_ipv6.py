@@ -47,21 +47,21 @@ class TestWireguardContextIPv6:
     def test_ipv4_tcp_intercepted(self, mock_native, mock_config):
         from wireguard_requests.context import wireguard_context
 
-        with wireguard_context(mock_config) as tunnel:
+        with wireguard_context(mock_config):
             s = stdlib_socket.socket(stdlib_socket.AF_INET, stdlib_socket.SOCK_STREAM)
             assert isinstance(s, WireGuardSocket)
 
     def test_ipv6_tcp_intercepted(self, mock_native, mock_config):
         from wireguard_requests.context import wireguard_context
 
-        with wireguard_context(mock_config) as tunnel:
+        with wireguard_context(mock_config):
             s = stdlib_socket.socket(stdlib_socket.AF_INET6, stdlib_socket.SOCK_STREAM)
             assert isinstance(s, WireGuardSocket)
 
     def test_udp_not_intercepted(self, mock_native, mock_config):
         from wireguard_requests.context import wireguard_context
 
-        with wireguard_context(mock_config) as tunnel:
+        with wireguard_context(mock_config):
             s = stdlib_socket.socket(stdlib_socket.AF_INET, stdlib_socket.SOCK_DGRAM)
             assert not isinstance(s, WireGuardSocket)
             s.close()
@@ -69,7 +69,7 @@ class TestWireguardContextIPv6:
     def test_ipv6_udp_not_intercepted(self, mock_native, mock_config):
         from wireguard_requests.context import wireguard_context
 
-        with wireguard_context(mock_config) as tunnel:
+        with wireguard_context(mock_config):
             s = stdlib_socket.socket(stdlib_socket.AF_INET6, stdlib_socket.SOCK_DGRAM)
             assert not isinstance(s, WireGuardSocket)
             s.close()

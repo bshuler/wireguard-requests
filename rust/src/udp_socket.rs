@@ -160,10 +160,9 @@ impl WgUdpSocket {
         self.closed = true;
 
         if self.shared.alive.load(Ordering::SeqCst) {
-            let _ = self
-                .shared
-                .cmd_tx
-                .send(TunnelCommand::CloseUdpSocket { handle: self.handle });
+            let _ = self.shared.cmd_tx.send(TunnelCommand::CloseUdpSocket {
+                handle: self.handle,
+            });
         }
         Ok(())
     }
@@ -192,10 +191,9 @@ impl WgUdpSocket {
 impl Drop for WgUdpSocket {
     fn drop(&mut self) {
         if !self.closed && self.shared.alive.load(Ordering::SeqCst) {
-            let _ = self
-                .shared
-                .cmd_tx
-                .send(TunnelCommand::CloseUdpSocket { handle: self.handle });
+            let _ = self.shared.cmd_tx.send(TunnelCommand::CloseUdpSocket {
+                handle: self.handle,
+            });
         }
     }
 }

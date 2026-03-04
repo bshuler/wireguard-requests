@@ -3,6 +3,7 @@
 Tests: IPv6 config parsing, UDP tunneling, DNS through tunnel, TLS wrap.
 Run with: pytest tests/integration -v -m integration
 """
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -148,9 +149,8 @@ class TestTlsWrap:
     def test_https_via_requests(self, wg_config):
         """Test HTTPS via requests library (which handles TLS automatically)."""
         try:
-            import urllib3
-
             import requests
+            import urllib3
         except ImportError:
             pytest.skip("requests not installed")
 
