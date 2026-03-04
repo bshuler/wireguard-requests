@@ -1,6 +1,6 @@
 # wireguard-requests
 
-Drop-in WireGuard tunneling for Python. Route any TCP traffic through a WireGuard tunnel without installing WireGuard on the OS.
+Drop-in WireGuard tunneling for Python. Route TCP, UDP, and DNS traffic through a WireGuard tunnel without installing WireGuard on the OS.
 
 ```python
 from wireguard_requests import WireGuardConfig, wireguard_context
@@ -8,7 +8,7 @@ import requests
 
 config = WireGuardConfig.from_file("wg0.conf")
 with wireguard_context(config):
-    # All TCP traffic now goes through WireGuard
+    # All TCP traffic now goes through WireGuard — including HTTPS
     r = requests.get("https://ifconfig.me")
     print(r.text)  # Shows the WireGuard endpoint IP
 ```
@@ -18,10 +18,19 @@ with wireguard_context(config):
 `wireguard-requests` bundles a complete userspace WireGuard + TCP/IP stack:
 
 - **[boringtun](https://github.com/cloudflare/boringtun)** — Cloudflare's WireGuard protocol implementation (Rust)
-- **[smoltcp](https://github.com/smoltcp-rs/smoltcp)** — Userspace TCP/IP stack (Rust)
+- **[smoltcp](https://github.com/smoltcp-rs/smoltcp)** — Userspace TCP/IP stack with IPv4, IPv6, TCP, UDP, and DNS (Rust)
 - **[PyO3](https://pyo3.rs)** — Rust ↔ Python bridge
 
 No kernel modules, no root access, no TUN devices. Just `pip install` and go.
+
+## Features
+
+- **TCP tunneling** — transparent socket replacement for requests, urllib3, httpx, aiohttp
+- **UDP tunneling** — send/receive datagrams through the WireGuard tunnel
+- **DNS resolution** — resolve hostnames through the tunnel's DNS server
+- **TLS/HTTPS** — transparent HTTPS support via memory BIOs (no real file descriptors needed)
+- **IPv6** — dual-stack config parsing and IPv6 socket interception
+- **Async** — asyncio support via `AsyncWireGuardSocket`
 
 ## Installation
 
@@ -54,6 +63,8 @@ with wireguard_context(config):
     # requests, urllib3, httpx, aiohttp — everything tunnels through WireGuard
     r = requests.get("https://example.com")
 ```
+
+HTTPS works transparently — `wireguard_context` also intercepts `ssl.SSLContext.wrap_socket` so that TLS handshakes happen over the WireGuard tunnel using memory BIOs.
 
 ### Scoped session (requests only)
 
@@ -88,6 +99,56 @@ sock.close()
 tunnel.close()
 ```
 
+### TLS / HTTPS
+
+Wrap any `WireGuardSocket` with TLS using `wrap_tls()`:
+
+```python
+from wireguard_requests import WireGuardConfig, WireGuardSocket, wireguard_context
+
+config = WireGuardConfig.from_file("wg0.conf")
+with wireguard_context(config) as tunnel:
+    sock = WireGuardSocket(tunnel)
+    sock.connect(("example.com", 443))
+    tls = sock.wrap_tls("example.com")
+    tls.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+    data = tls.recv(4096)
+    tls.close()
+```
+
+Uses `ssl.MemoryBIO` + `ssl.SSLObject` under the hood — no real file descriptors needed.
+
+### UDP tunneling
+
+Send and receive UDP datagrams through the tunnel:
+
+```python
+from wireguard_requests import WireGuardConfig, WireGuardUdpSocket, wireguard_context
+
+config = WireGuardConfig.from_file("wg0.conf")
+with wireguard_context(config) as tunnel:
+    udp = WireGuardUdpSocket(tunnel.create_udp_socket(0))
+    udp.settimeout(5.0)
+    udp.sendto(b"hello", ("10.0.0.1", 9999))
+    data, addr = udp.recvfrom(4096)
+    udp.close()
+```
+
+### DNS resolution through the tunnel
+
+Resolve hostnames using the tunnel's DNS server (configured via `DNS` in the .conf file):
+
+```python
+from wireguard_requests import WireGuardConfig, wireguard_context
+
+config = WireGuardConfig.from_file("wg0.conf")
+with wireguard_context(config) as tunnel:
+    ip = tunnel.resolve_dns("internal.corp.local")
+    print(ip)  # e.g. "10.0.0.50"
+```
+
+Hostnames passed to `WireGuardSocket.connect()` are also resolved through the tunnel DNS automatically.
+
 ### Async (asyncio)
 
 ```python
@@ -117,34 +178,40 @@ from wireguard_requests import WireGuardConfig, Peer
 config = WireGuardConfig(
     private_key="yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",
     address="10.0.0.2",
+    address_v6="fd00::2",        # Optional IPv6
+    prefix_len_v6=64,
     peers=[Peer(
         public_key="xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
         endpoint="203.0.113.1:51820",
-        allowed_ips=["0.0.0.0/0"],
+        allowed_ips=["0.0.0.0/0", "::/0"],
         persistent_keepalive=25,
+        preshared_key="...",     # Optional
     )],
+    dns=["10.0.0.1"],
 )
+```
+
+Dual-stack configs are also parsed automatically from `.conf` files:
+
+```ini
+[Interface]
+PrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=
+Address = 10.0.0.2/24, fd00::2/64
+DNS = 10.0.0.1
 ```
 
 ## Architecture
 
 ```
 Your Python app (requests, aiohttp, etc.)
-  → WireGuardSocket (drop-in socket.socket)
+  → WireGuardSocket / WireGuardUdpSocket (drop-in socket API)
     → Rust WgTunnel (PyO3)
-      → smoltcp (userspace TCP/IP)
+      → smoltcp (userspace TCP/IP + UDP + DNS)
         → boringtun (WireGuard encrypt/decrypt)
           → UDP socket → WireGuard endpoint
 ```
 
-A background Rust thread runs the smoltcp ↔ boringtun ↔ UDP poll loop. Python communicates with it via lock-free channels. Each tunnel supports multiple concurrent TCP connections.
-
-## Limitations
-
-- **IPv4 only** (IPv6 support planned)
-- **TCP only** — UDP tunneling not yet exposed to Python
-- **DNS resolves on the host** — not through the tunnel (planned)
-- **No TLS termination** — use `requests` or `httpx` for HTTPS (they handle TLS above the socket layer)
+A background Rust thread runs the smoltcp ↔ boringtun ↔ UDP poll loop. Python communicates with it via lock-free channels. Each tunnel supports multiple concurrent TCP and UDP connections.
 
 ## Development
 
