@@ -273,13 +273,16 @@ class TestNatPmp:
         from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
 
         with wireguard_context(wg_config) as tunnel:
+            # Warm up tunnel on a throwaway socket so the WireGuard handshake
+            # completes without leaving stale NAT-PMP responses in our socket.
+            warmup = WireGuardUdpSocket(tunnel.create_udp_socket(0))
+            _udp_send_recv(warmup, b"warmup", ("10.13.13.1", 9999))
+            warmup.close()
+
             native_udp = tunnel.create_udp_socket(0)
             udp = WireGuardUdpSocket(native_udp)
             try:
                 client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
-                # Warm up tunnel to complete WireGuard handshake; avoids
-                # retry-induced stale responses contaminating the delete.
-                client.get_external_address()
                 # First create a mapping
                 client.request_mapping("UDP", internal_port=9090, lifetime=60)
                 # Then delete it
@@ -325,12 +328,15 @@ class TestNatPmp:
         from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
 
         with wireguard_context(wg_config) as tunnel:
+            # Warm up tunnel on a throwaway socket.
+            warmup = WireGuardUdpSocket(tunnel.create_udp_socket(0))
+            _udp_send_recv(warmup, b"warmup", ("10.13.13.1", 9999))
+            warmup.close()
+
             native_udp = tunnel.create_udp_socket(0)
             udp = WireGuardUdpSocket(native_udp)
             try:
                 client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
-                # Warm up tunnel to complete WireGuard handshake.
-                client.get_external_address()
                 client.request_mapping("UDP", internal_port=7070, lifetime=60)
                 client.request_mapping("UDP", internal_port=7071, lifetime=60)
                 resp = client.delete_all_mappings("UDP")
