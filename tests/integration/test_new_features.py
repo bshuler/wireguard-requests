@@ -219,3 +219,163 @@ AllowedIPs = 0.0.0.0/0, ::/0
         assert config.prefix_len == 24
         assert config.address_v6 == "fd00::2"
         assert config.prefix_len_v6 == 64
+
+
+class TestNatPmp:
+    def test_get_external_address(self, wg_config):
+        """Get the external IP address from the NAT-PMP gateway."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                resp = client.get_external_address()
+                assert resp.external_ip == "203.0.113.42"
+                assert resp.epoch > 0
+            finally:
+                udp.close()
+
+    def test_request_port_mapping(self, wg_config):
+        """Request a port mapping through NAT-PMP."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                resp = client.request_mapping("UDP", internal_port=8080, lifetime=60)
+                assert resp.internal_port == 8080
+                assert resp.external_port > 0
+                assert resp.lifetime == 60
+            finally:
+                udp.close()
+
+    def test_port_mapping_context_manager(self, wg_config):
+        """Test auto-renewing port mapping context manager."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                with client.port_mapping("TCP", internal_port=8080, lifetime=60) as pm:
+                    assert pm.external_port > 0
+                    assert pm.lifetime == 60
+            finally:
+                udp.close()
+
+    def test_delete_mapping(self, wg_config):
+        """Delete a port mapping via NAT-PMP."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                # First create a mapping
+                client.request_mapping("UDP", internal_port=9090, lifetime=60)
+                # Then delete it
+                resp = client.delete_mapping("UDP", internal_port=9090)
+                assert resp.lifetime == 0
+            finally:
+                udp.close()
+
+    def test_tcp_mapping(self, wg_config):
+        """Request a TCP port mapping."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                resp = client.request_mapping("TCP", internal_port=8080, lifetime=60)
+                assert resp.internal_port == 8080
+                assert resp.external_port > 0
+            finally:
+                udp.close()
+
+    def test_specific_external_port(self, wg_config):
+        """Request a specific external port."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                resp = client.request_mapping(
+                    "UDP", internal_port=8080, external_port=12345, lifetime=60
+                )
+                assert resp.external_port == 12345
+                assert resp.internal_port == 8080
+            finally:
+                udp.close()
+
+    def test_delete_all_mappings(self, wg_config):
+        """Delete all mappings for a protocol via NAT-PMP."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(udp, gateway="10.13.13.1", timeout=10.0)
+                client.request_mapping("UDP", internal_port=7070, lifetime=60)
+                client.request_mapping("UDP", internal_port=7071, lifetime=60)
+                resp = client.delete_all_mappings("UDP")
+                assert resp.lifetime == 0
+                assert resp.external_port == 0
+            finally:
+                udp.close()
+
+
+class TestNatPmpNegativePaths:
+    def test_wrong_gateway_timeout(self, wg_config):
+        """Connecting to wrong gateway IP should timeout."""
+        from wireguard_requests import NatPmpClient, WireGuardUdpSocket, wireguard_context
+        from wireguard_requests.exceptions import NatPmpTimeoutError
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                client = NatPmpClient(
+                    udp,
+                    gateway="10.13.13.99",
+                    max_retries=3,
+                    initial_timeout=0.25,
+                )
+                with pytest.raises(NatPmpTimeoutError):
+                    client.get_external_address()
+            finally:
+                udp.close()
+
+    def test_unsupported_version_error(self, wg_config):
+        """Sending wrong version triggers error result code from server."""
+        import struct
+
+        from wireguard_requests import WireGuardUdpSocket, wireguard_context
+        from wireguard_requests.exceptions import NatPmpUnsupportedError
+        from wireguard_requests.natpmp import (
+            NATPMP_PORT,
+            _decode_external_address_response,
+        )
+
+        with wireguard_context(wg_config) as tunnel:
+            native_udp = tunnel.create_udp_socket(0)
+            udp = WireGuardUdpSocket(native_udp)
+            try:
+                bad_request = struct.pack("!BB", 1, 0)
+                udp.settimeout(10.0)
+                udp.sendto(bad_request, ("10.13.13.1", NATPMP_PORT))
+                data, addr = udp.recvfrom(1024)
+                with pytest.raises(NatPmpUnsupportedError):
+                    _decode_external_address_response(data)
+            finally:
+                udp.close()

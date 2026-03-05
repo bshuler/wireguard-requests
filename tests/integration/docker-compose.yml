@@ -179,3 +179,52 @@ services:
         server.serve_forever()
     depends_on:
       - wireguard
+
+  natpmpserver:
+    image: python:3.12-slim
+    container_name: wg-test-natpmp
+    network_mode: "service:wireguard"
+    command:
+      - python
+      - -c
+      - |
+        import socket, struct, time
+
+        EXTERNAL_IP = "203.0.113.42"
+        START_TIME = time.monotonic()
+
+        def get_epoch():
+            return int(time.monotonic() - START_TIME)
+
+        def handle_request(data):
+            if len(data) < 2:
+                return None
+            ver, opcode = struct.unpack("!BB", data[:2])
+            if ver != 0:
+                if opcode in (1, 2):
+                    return struct.pack("!BBHIHHI", 0, opcode + 128, 1, get_epoch(), 0, 0, 0)
+                return struct.pack("!BBHI", 0, opcode + 128, 1, get_epoch()) + b'\x00\x00\x00\x00'
+            if opcode == 0:
+                ip_bytes = socket.inet_aton(EXTERNAL_IP)
+                return struct.pack("!BBHI", 0, 128, 0, get_epoch()) + ip_bytes
+            elif opcode in (1, 2):
+                if len(data) < 12:
+                    return None
+                _, _, internal_port, ext_port, lifetime = struct.unpack("!BB2xHHI", data[:12])
+                if lifetime == 0 and ext_port == 0:
+                    assigned_port = 0
+                else:
+                    assigned_port = ext_port if ext_port != 0 else internal_port + 1000
+                return struct.pack("!BBHIHHI", 0, opcode + 128, 0, get_epoch(), internal_port, assigned_port, lifetime)
+            return struct.pack("!BBHI", 0, opcode + 128, 5, get_epoch()) + b'\x00\x00\x00\x00'
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(('0.0.0.0', 5351))
+        print('NAT-PMP server ready on port 5351', flush=True)
+        while True:
+            data, addr = s.recvfrom(512)
+            resp = handle_request(data)
+            if resp:
+                s.sendto(resp, addr)
+    depends_on:
+      - wireguard

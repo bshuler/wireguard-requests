@@ -31,6 +31,7 @@ No kernel modules, no root access, no TUN devices. Just `pip install` and go.
 - **TLS/HTTPS** — transparent HTTPS support via memory BIOs (no real file descriptors needed)
 - **IPv6** — dual-stack config parsing and IPv6 socket interception
 - **Async** — asyncio support via `AsyncWireGuardSocket`
+- **NAT-PMP** — auto-renewing port forwarding through NAT-PMP gateways (e.g., ProtonVPN)
 
 ## Installation
 
@@ -85,18 +86,15 @@ session.close()
 Use `WireGuardSocket` as a drop-in for `socket.socket`:
 
 ```python
-from wireguard_requests import WireGuardConfig, WireGuardSocket
-from wireguard_requests._native import WgTunnel
+from wireguard_requests import WireGuardConfig, WireGuardSocket, wireguard_context
 
 config = WireGuardConfig.from_file("wg0.conf")
-tunnel = WgTunnel(config.to_native())
-
-sock = WireGuardSocket(tunnel)
-sock.connect(("example.com", 80))
-sock.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-data = sock.recv(4096)
-sock.close()
-tunnel.close()
+with wireguard_context(config) as tunnel:
+    sock = WireGuardSocket(tunnel)
+    sock.connect(("example.com", 80))
+    sock.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+    data = sock.recv(4096)
+    sock.close()
 ```
 
 ### TLS / HTTPS
@@ -153,21 +151,58 @@ Hostnames passed to `WireGuardSocket.connect()` are also resolved through the tu
 
 ```python
 import asyncio
-from wireguard_requests import AsyncWireGuardSocket, WireGuardConfig
-from wireguard_requests._native import WgTunnel
+from wireguard_requests import AsyncWireGuardSocket, WireGuardConfig, wireguard_context
 
 async def main():
     config = WireGuardConfig.from_file("wg0.conf")
-    tunnel = WgTunnel(config.to_native())
-
-    async with AsyncWireGuardSocket(tunnel) as sock:
-        await sock.connect(("example.com", 80))
-        await sock.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        data = await sock.recv(4096)
-
-    tunnel.close()
+    with wireguard_context(config) as tunnel:
+        async with AsyncWireGuardSocket(tunnel) as sock:
+            await sock.connect(("example.com", 80))
+            await sock.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            data = await sock.recv(4096)
 
 asyncio.run(main())
+```
+
+### NAT-PMP port forwarding
+
+Request port mappings from a NAT-PMP gateway (e.g., ProtonVPN) to accept inbound connections:
+
+```python
+from wireguard_requests import WireGuardConfig, WireGuardUdpSocket, NatPmpClient, wireguard_context
+
+config = WireGuardConfig.from_file("protonvpn.conf")
+with wireguard_context(config) as tunnel:
+    udp = WireGuardUdpSocket(tunnel.create_udp_socket(0))
+    client = NatPmpClient(udp, gateway="10.2.0.1")
+
+    # Query the gateway's external IP
+    addr = client.get_external_address()
+    print(addr.external_ip)  # e.g. "203.0.113.42"
+
+    # Auto-renewing port mapping (renewed at lifetime/2, deleted on exit)
+    with client.port_mapping("TCP", internal_port=8080, lifetime=60) as pm:
+        print(f"Listening on {addr.external_ip}:{pm.external_port}")
+        # ... accept connections ...
+    # mapping deleted automatically
+
+    udp.close()
+```
+
+#### Lower-level API
+
+For more control, use `request_mapping()` and `delete_mapping()` directly:
+
+```python
+# One-shot mapping (no auto-renewal)
+resp = client.request_mapping("UDP", internal_port=51820, external_port=0, lifetime=120)
+print(f"Mapped: {resp.external_port} -> {resp.internal_port} for {resp.lifetime}s")
+
+# Delete a specific mapping
+client.delete_mapping("UDP", internal_port=51820)
+
+# Delete ALL mappings for a protocol
+client.delete_all_mappings("UDP")
 ```
 
 ### Programmatic config

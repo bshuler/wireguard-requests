@@ -11,7 +11,10 @@ from __future__ import annotations
 import socket as stdlib_socket
 import ssl as stdlib_ssl
 from contextlib import contextmanager
-from typing import Iterator, Optional, Type
+from typing import TYPE_CHECKING, Iterator, Optional, Type
+
+if TYPE_CHECKING:
+    from ._native import WgTunnel
 
 from .config import WireGuardConfig
 from .socket import WireGuardSocket
@@ -20,7 +23,7 @@ _original_socket_class: Optional[Type] = None
 
 
 @contextmanager
-def wireguard_context(config: WireGuardConfig) -> Iterator[object]:
+def wireguard_context(config: WireGuardConfig) -> Iterator[WgTunnel]:
     """Context manager that routes all TCP connections through WireGuard.
 
     Monkeypatches `socket.socket` so that any AF_INET + SOCK_STREAM socket

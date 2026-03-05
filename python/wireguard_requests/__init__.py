@@ -14,9 +14,14 @@ Quick Start:
         print(r.text)
 """
 
+from __future__ import annotations
+
 from .config import Peer, WireGuardConfig
 from .exceptions import (
     ConfigError,
+    NatPmpError,
+    NatPmpTimeoutError,
+    NatPmpUnsupportedError,
     StreamClosedError,
     StreamError,
     TunnelClosedError,
@@ -30,23 +35,68 @@ def __getattr__(name):
     if name == "WireGuardSocket":
         from .socket import WireGuardSocket
 
+        globals()["WireGuardSocket"] = WireGuardSocket
         return WireGuardSocket
     if name == "WireGuardUdpSocket":
         from .udp_socket import WireGuardUdpSocket
 
+        globals()["WireGuardUdpSocket"] = WireGuardUdpSocket
         return WireGuardUdpSocket
     if name == "AsyncWireGuardSocket":
         from .async_socket import AsyncWireGuardSocket
 
+        globals()["AsyncWireGuardSocket"] = AsyncWireGuardSocket
         return AsyncWireGuardSocket
     if name == "wireguard_context":
         from .context import wireguard_context
 
+        globals()["wireguard_context"] = wireguard_context
         return wireguard_context
     if name == "create_session":
         from .session import create_session
 
+        globals()["create_session"] = create_session
         return create_session
+    if name == "NatPmpClient":
+        from .natpmp import NatPmpClient
+
+        globals()["NatPmpClient"] = NatPmpClient
+        return NatPmpClient
+    if name == "ExternalAddressResponse":
+        from .natpmp import ExternalAddressResponse
+
+        globals()["ExternalAddressResponse"] = ExternalAddressResponse
+        return ExternalAddressResponse
+    if name == "PortMappingResponse":
+        from .natpmp import PortMappingResponse
+
+        globals()["PortMappingResponse"] = PortMappingResponse
+        return PortMappingResponse
+    if name == "NatPmpOpcode":
+        from .natpmp import NatPmpOpcode
+
+        globals()["NatPmpOpcode"] = NatPmpOpcode
+        return NatPmpOpcode
+    if name == "NatPmpResultCode":
+        from .natpmp import NatPmpResultCode
+
+        globals()["NatPmpResultCode"] = NatPmpResultCode
+        return NatPmpResultCode
+    if name == "NATPMP_PORT":
+        from .natpmp import NATPMP_PORT
+
+        globals()["NATPMP_PORT"] = NATPMP_PORT
+        return NATPMP_PORT
+    if name == "NATPMP_VERSION":
+        from .natpmp import NATPMP_VERSION
+
+        globals()["NATPMP_VERSION"] = NATPMP_VERSION
+        return NATPMP_VERSION
+    if name == "UdpSocketLike":
+        from .natpmp import UdpSocketLike
+
+        globals()["UdpSocketLike"] = UdpSocketLike
+        return UdpSocketLike
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -69,4 +119,17 @@ __all__ = [
     "TunnelClosedError",
     "StreamError",
     "StreamClosedError",
+    # NAT-PMP
+    "NatPmpClient",
+    "ExternalAddressResponse",
+    "PortMappingResponse",
+    "NatPmpOpcode",
+    "NatPmpResultCode",
+    "NATPMP_PORT",
+    "NATPMP_VERSION",
+    "UdpSocketLike",
+    # NAT-PMP Exceptions
+    "NatPmpError",
+    "NatPmpTimeoutError",
+    "NatPmpUnsupportedError",
 ]
